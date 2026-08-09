@@ -5,7 +5,7 @@ right trip by date and destination, and keeps one Google Doc itinerary, one buff
 event, and one expense row current for that booking — modifying, never duplicating, when the
 booking changes or is cancelled.**
 
-Constraints reference: [NOTES.md](NOTES.md). Scoring is Quality 50 (an AI reads the final output) /
+Scoring is Quality 50 (an AI reads the final output) /
 Reliability 25 / Speed 12.5 / Cost 12.5.
 
 ---
