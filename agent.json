@@ -1,0 +1,812 @@
+{
+  "name": "Travel Admin Organizer (lean)",
+  "type": "SHARED",
+  "summary": "",
+  "description": "Catches booking confirmations as they land in Gmail and keeps one chronological itinerary, buffered calendar events and a reimbursement-ready expense sheet current per trip.",
+  "tags": [],
+  "blogUrl": "",
+  "metadata": {},
+  "author": "veer arora",
+  "categories": [],
+  "pieces": [
+    "@activepieces/piece-gmail",
+    "@activepieces/piece-store",
+    "@activepieces/piece-ai",
+    "@activepieces/piece-google-sheets",
+    "@activepieces/piece-google-calendar"
+  ],
+  "flows": [
+    {
+      "displayName": "Travel Admin Organizer (lean)",
+      "trigger": {
+        "name": "trigger",
+        "valid": true,
+        "displayName": "New booking email",
+        "nextAction": {
+          "name": "prep",
+          "type": "CODE",
+          "valid": true,
+          "settings": {
+            "input": {
+              "email": "{{trigger}}"
+            },
+            "sourceCode": {
+              "code": "export const code = async (inputs) => {\n  const root = inputs.email || {};\n  const RX = (s, f) => new RegExp(s, f);   // built from strings: no escaped slashes to mangle\n  const findHeader = (o, name, d) => {\n    if (!o || typeof o !== 'object' || (d||0) > 5) return undefined;\n    if (Array.isArray(o)) { for (const it of o) { if (it && typeof it === 'object') { const k = String(it.key || it.name || '').toLowerCase(); if (k === name) return String(it.line || it.value || '').replace(RX('^' + name + '\\\\s*:\\\\s*','i'), '').trim(); } const h = findHeader(it, name, (d||0)+1); if (h) return h; } return undefined; }\n    for (const k of Object.keys(o)) { const h = findHeader(o[k], name, (d||0)+1); if (h) return h; }\n    return undefined;\n  };\n  const findKey = (o, names, d) => { if (o == null || typeof o !== 'object' || (d||0) > 5) return undefined; for (const n of names) { const v = o[n]; if (typeof v === 'string' && v.trim()) return v; } for (const k of Object.keys(o)) { const h = findKey(o[k], names, (d||0)+1); if (h !== undefined) return h; } return undefined; };\n  const subject = findKey(root, ['subject']) || '';\n  const from = findKey(root, ['from','sender']) || findHeader(root, 'from') || '';\n  const messageId = findKey(root, ['messageId','id']) || '';\n  const cands = [];\n  const collect = (o, d) => { if (o == null || (d||0) > 6) return; if (typeof o === 'string') { if (o.length > 120) cands.push(o); return; } if (typeof o === 'object') { for (const k of Object.keys(o)) collect(o[k], (d||0)+1); } };\n  collect(root, 0);\n  const B64 = RX('[A-Za-z0-9+/=]{45,}','g');\n  const MARK = ['pnr','departure','arrival','fare','confirmation','booking','train','flight','check-in','reservation','ticket','passenger','total','ride id','amount'];\n  const score = (s) => { const lo = s.slice(0,6000).toLowerCase(); const hits = MARK.filter(m => lo.indexOf(m) > -1).length; const b64 = (s.match(B64) || []).length; const sp = (lo.split(' ').length) / Math.max(1, lo.length); return hits*10 + Math.min(sp*10,5) - Math.min(b64,20); };\n  cands.sort((a,b) => score(b) - score(a));\n  let s = String(cands[0] || '');\n  s = s.replace(RX('<style[\\\\s\\\\S]*?</style>','gi'), ' ');\n  s = s.replace(RX('<script[\\\\s\\\\S]*?</script>','gi'), ' ');\n  s = s.replace(RX('<[^>]+>','g'), ' ');\n  s = s.replace(RX('&nbsp;|&#8203;|&zwnj;','g'), ' ');\n  s = s.replace(RX('https?://[^\\\\s\\\\]]+','gi'), ' ');\n  s = s.replace(B64, ' ');\n  s = s.replace(RX('\\\\s+','g'), ' ').trim();\n  const STOP = ['must read','passengers are advised','book hotels','do not provide your credit','this document is issued on request','uber does not provide transport','if you are unable to view','unsubscribe','privacy policy','warm regards'];\n  let cut = s.length; const lo = s.toLowerCase();\n  for (const m of STOP) { const at = lo.indexOf(m); if (at > 200 && at < cut) cut = at; }\n  const text = s.slice(0, cut).slice(0, 1800).trim();\n  const hay = (subject + ' ' + text).toLowerCase();\n  const BOOK = ['pnr','booking confirmation','booking confirmed','e-ticket','itinerary','reservation','check-in','ride id','trip with','scheduled departure','confirmation number','booking id','ticket confirmation'];\n  const NOISE = ['insurance is issued','policy is issued','% off','offer expires','sale ends','unsubscribe now','newsletter'];\n  const hits = BOOK.filter(k => hay.indexOf(k) > -1);\n  const noise = NOISE.filter(k => hay.indexOf(k) > -1);\n  return { messageId, subject, from, aiText: 'Subject: ' + subject + '\\nFrom: ' + from + '\\n\\n' + text, textLength: text.length, looksLikeBooking: hits.length > 0 && noise.length === 0, bookingFlag: (hits.length > 0 && noise.length === 0) ? 'yes' : 'no' };\n};",
+              "packageJson": "{}"
+            },
+            "errorHandlingOptions": {
+              "retryOnFailure": {
+                "value": false
+              },
+              "continueOnFailure": {
+                "value": false
+              }
+            }
+          },
+          "nextAction": {
+            "name": "state_in",
+            "type": "PIECE",
+            "valid": true,
+            "settings": {
+              "input": {
+                "key": "travel_state",
+                "store_scope": "FLOW"
+              },
+              "pieceName": "@activepieces/piece-store",
+              "actionName": "get",
+              "pieceVersion": "0.6.19",
+              "propertySettings": {
+                "key": {
+                  "type": "MANUAL"
+                },
+                "store_scope": {
+                  "type": "MANUAL"
+                },
+                "defaultValue": {
+                  "type": "MANUAL"
+                }
+              },
+              "errorHandlingOptions": {
+                "retryOnFailure": {
+                  "value": false
+                },
+                "continueOnFailure": {
+                  "value": false
+                }
+              }
+            },
+            "nextAction": {
+              "name": "home",
+              "type": "PIECE",
+              "valid": true,
+              "settings": {
+                "input": {
+                  "key": "home_city",
+                  "store_scope": "FLOW",
+                  "defaultValue": "Bengaluru"
+                },
+                "pieceName": "@activepieces/piece-store",
+                "actionName": "get",
+                "pieceVersion": "0.6.19",
+                "propertySettings": {
+                  "key": {
+                    "type": "MANUAL"
+                  },
+                  "store_scope": {
+                    "type": "MANUAL"
+                  },
+                  "defaultValue": {
+                    "type": "MANUAL"
+                  }
+                },
+                "errorHandlingOptions": {
+                  "retryOnFailure": {
+                    "value": false
+                  },
+                  "continueOnFailure": {
+                    "value": false
+                  }
+                }
+              },
+              "nextAction": {
+                "name": "r_ai",
+                "type": "ROUTER",
+                "valid": true,
+                "children": [
+                  {
+                    "name": "extract",
+                    "type": "PIECE",
+                    "valid": true,
+                    "settings": {
+                      "input": {
+                        "mode": "simple",
+                        "text": "{{prep.output.aiText}}",
+                        "files": [],
+                        "model": "google/gemini-3.5-flash-lite",
+                        "prompt": "Extract the travel booking from this email.\n\nA reschedule or cancellation notice IS a booking event: use kind = change or cancellation.\nUse kind = not_a_booking ONLY for marketing, offers or travel insurance policies.\n\nReturn only what the email states; never invent a value.\nUse the TOTAL amount paid including fees.\nIf a revised time is given, use the revised one.",
+                        "schema": {
+                          "fields": [
+                            {
+                              "name": "kind",
+                              "type": "string",
+                              "description": "new = first confirmation; change = reschedule of an existing booking; cancellation = booking cancelled; not_a_booking = insurance, marketing or policy notice"
+                            },
+                            {
+                              "name": "type",
+                              "type": "string",
+                              "description": "flight, train, hotel, cab, bus or other"
+                            },
+                            {
+                              "name": "vendor",
+                              "type": "string",
+                              "description": "Airline, railway, hotel or cab company"
+                            },
+                            {
+                              "name": "confirmation",
+                              "type": "string",
+                              "description": "PNR, booking reference or ride ID; empty if none"
+                            },
+                            {
+                              "name": "start",
+                              "type": "string",
+                              "description": "Departure or check-in, ISO 8601 with +05:30 for Indian local times"
+                            },
+                            {
+                              "name": "end",
+                              "type": "string",
+                              "description": "Arrival or check-out, ISO 8601; arrivals can fall on the next day"
+                            },
+                            {
+                              "name": "originCity",
+                              "type": "string",
+                              "description": "City departed from, plain name"
+                            },
+                            {
+                              "name": "destinationCity",
+                              "type": "string",
+                              "description": "City arrived at, plain name"
+                            },
+                            {
+                              "name": "address",
+                              "type": "string",
+                              "description": "Street address or station name"
+                            },
+                            {
+                              "name": "amount",
+                              "type": "number",
+                              "description": "Total paid including fees, not the base fare"
+                            },
+                            {
+                              "name": "currency",
+                              "type": "string",
+                              "description": "ISO code such as INR"
+                            },
+                            {
+                              "name": "category",
+                              "type": "string",
+                              "description": "Airfare, Rail, Accommodation, Local transport or Other"
+                            },
+                            {
+                              "name": "description",
+                              "type": "string",
+                              "description": "Short label, e.g. train number and name"
+                            }
+                          ]
+                        },
+                        "provider": "activepieces",
+                        "maxOutputTokens": 500
+                      },
+                      "pieceName": "@activepieces/piece-ai",
+                      "actionName": "extractStructuredData",
+                      "pieceVersion": "0.4.9",
+                      "propertySettings": {
+                        "mode": {
+                          "type": "MANUAL"
+                        },
+                        "text": {
+                          "type": "MANUAL"
+                        },
+                        "files": {
+                          "type": "MANUAL"
+                        },
+                        "model": {
+                          "type": "MANUAL"
+                        },
+                        "prompt": {
+                          "type": "MANUAL"
+                        },
+                        "schema": {
+                          "type": "MANUAL"
+                        },
+                        "provider": {
+                          "type": "MANUAL"
+                        },
+                        "maxOutputTokens": {
+                          "type": "MANUAL"
+                        }
+                      },
+                      "errorHandlingOptions": {
+                        "retryOnFailure": {
+                          "value": false
+                        },
+                        "continueOnFailure": {
+                          "value": false
+                        }
+                      }
+                    },
+                    "displayName": "Read the booking",
+                    "lastUpdatedDate": "2026-08-03T18:28:28.495Z"
+                  },
+                  null
+                ],
+                "settings": {
+                  "branches": [
+                    {
+                      "branchName": "Yes, read it",
+                      "branchType": "CONDITION",
+                      "conditions": [
+                        [
+                          {
+                            "operator": "TEXT_EXACTLY_MATCHES",
+                            "firstValue": "{{prep.output.bookingFlag}}",
+                            "secondValue": "yes",
+                            "caseSensitive": false
+                          }
+                        ]
+                      ]
+                    },
+                    {
+                      "branchName": "Not a booking",
+                      "branchType": "FALLBACK"
+                    }
+                  ],
+                  "executionType": "EXECUTE_FIRST_MATCH"
+                },
+                "nextAction": {
+                  "name": "core",
+                  "type": "CODE",
+                  "valid": true,
+                  "settings": {
+                    "input": {
+                      "gate": "{{prep}}",
+                      "home": "{{home}}",
+                      "state": "{{state_in}}",
+                      "booking": "{{extract}}"
+                    },
+                    "sourceCode": {
+                      "code": "export const code = async (inputs) => {\n  const u = (v) => (v && typeof v === 'object' && Object.keys(v).length === 1 && 'output' in v) ? v.output : v;\n  const g = u(inputs.gate) || {};\n  const homeCity = String(u(inputs.home) || 'Bengaluru').trim() || 'Bengaluru';\n  let b = u(inputs.booking); if (typeof b === 'string') { try { b = JSON.parse(b); } catch (e) { try { b = JSON.parse(b.slice(0, b.lastIndexOf(',')) + '}'); } catch (e2) { b = null; } } }\n  b = b || {};\n  // ---- state, unwrapped from any accumulated { output: ... } layers ----\n  let st = null;\n  try { let v = u(inputs.state); for (let i = 0; i < 20; i++) { if (typeof v === 'string') { v = v ? JSON.parse(v) : null; continue; } if (v && typeof v === 'object' && 'output' in v && !('bookings' in v)) { v = v.output; continue; } break; } st = v; } catch (e) { st = null; }\n  if (!st || typeof st !== 'object' || Array.isArray(st)) st = {};\n  st.sheetId = st.sheetId || ''; st.sheetUrl = st.sheetUrl || ''; st.docId = st.docId || '';\n  st.seen = Array.isArray(st.seen) ? st.seen : [];\n  st.bookings = st.bookings || {}; st.trips = st.trips || {};\n\n  const norm = (s) => String(s == null ? '' : s).trim();\n  const low = (s) => norm(s).toLowerCase();\n  const same = (a, c) => { a = low(a); c = low(c); return a !== '' && c !== '' && (a === c || a.indexOf(c) === 0 || c.indexOf(a) === 0); };\n  const when = (v) => { if (!v) return null; const s = norm(v); if (!s) return null; if (/^\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}/.test(s) && !/(Z|[+-]\\d{2}:?\\d{2})$/.test(s)) { const d0 = new Date(s.replace(' ','T') + 'Z'); return isNaN(d0.getTime()) ? null : new Date(d0.getTime() - 330*60000); } const d = new Date(s); return isNaN(d.getTime()) ? null : d; };\n  const kind = low(b.kind);\n  const isBooking = g.looksLikeBooking === true && kind !== 'not_a_booking' && kind !== '';\n  const already = g.messageId && st.seen.indexOf(g.messageId) !== -1;\n  const start = when(b.start); const end = when(b.end) || start;\n  const type = low(b.type) || 'other';\n  const day = (d) => d ? d.toISOString().slice(0,10) : '';\n\n  // #2/#3/#4 - a booking must carry enough real detail before anything is created.\n  const destKnown = norm(b.destinationCity) || norm(b.originCity);\n  const conf0 = norm(b.confirmation).replace(/\\s+/g,'').toUpperCase();\n  const identifiable = !!conf0 || (!!start && !!destKnown && type !== 'other');\n  const complete = isBooking && !!start && !!destKnown && identifiable;\n  const missing = !isBooking ? [] : ['start date','destination','identifier']\n    .filter((f, ix) => (ix === 0 && !start) || (ix === 1 && !destKnown) || (ix === 2 && !identifiable));\n  let action = 'skip', key = '', tripId = '';\n  if (complete && !already) {\n    const conf = conf0;\n    const fp = [type, start.toISOString().slice(0,16), low(b.originCity), low(b.destinationCity)].join('|');\n    key = conf ? (type + ':' + conf) : ('fp:' + fp);\n    let ex = st.bookings[key] ? key : '';\n    if (!ex) { for (const k of Object.keys(st.bookings)) { if (st.bookings[k].fp === fp) { ex = k; break; } } }\n    // A cab inside the home city with no trip nearby is a commute, not travel.\n    const isCab = ['cab','taxi','ride','transfer'].indexOf(type) > -1;\n    const bothHome = same(b.originCity, homeCity) && same(b.destinationCity, homeCity);\n    let near = false;\n    for (const id of Object.keys(st.trips)) { const t = st.trips[id]; const s2 = when(t.start), e2 = when(t.end); if (s2 && e2 && start.getTime() >= s2.getTime() - 864e5 && start.getTime() <= e2.getTime() + 864e5) { near = true; break; } }\n    const localRide = isCab && bothHome && !near;\n    if (!localRide) {\n      action = (ex && (kind === 'cancellation')) ? 'cancel' : (ex ? 'update' : 'new');\n      key = ex || key;\n      tripId = (st.bookings[key] || {}).tripId || '';\n      if (!tripId) {\n        for (const id of Object.keys(st.trips)) { const t = st.trips[id]; const s2 = when(t.start), e2 = when(t.end); const dOk = s2 && e2 && start.getTime() >= s2.getTime() - 2*864e5 && start.getTime() <= e2.getTime() + 2*864e5; const cOk = same(b.destinationCity, t.destination) || same(b.originCity, t.destination) || (t.cities||[]).some(c => same(b.destinationCity,c) || same(b.originCity,c)); if (dOk && cOk) { tripId = id; break; } }\n      }\n      const away = same(b.originCity, homeCity) ? b.destinationCity : b.originCity;\n      const dest = norm(away) || norm(b.destinationCity) || norm(b.originCity);\n      if (!tripId) { tripId = 'trip_' + day(start) + '_' + low(dest).replace(/[^a-z0-9]+/g,''); st.trips[tripId] = { name: homeCity + ' to ' + dest, destination: dest, cities: [norm(b.originCity), norm(b.destinationCity)].filter(Boolean), start: day(start), end: day(end), keys: [] }; }\n      const BUF = { flight: 120, train: 45, hotel: 0, cab: 15, bus: 30, other: 30 };\n      const buf = BUF[type] === undefined ? 30 : BUF[type];\n      st.bookings[key] = { tzFixed: true, type, vendor: norm(b.vendor), confirmation: conf, fp, start: start.toISOString(), end: end ? end.toISOString() : '', originCity: norm(b.originCity), destinationCity: norm(b.destinationCity), address: norm(b.address), amount: (b.amount === 0 || b.amount) ? Number(b.amount) : null, currency: norm(b.currency), category: norm(b.category) || 'Travel', description: norm(b.description), tripId, buffer: buf, status: action === 'cancel' ? 'cancelled' : 'active' };\n      const t = st.trips[tripId]; if (t.keys.indexOf(key) === -1) t.keys.push(key);\n      const ds = [t.start, day(start)].filter(Boolean).sort(); const de = [t.end, day(end)].filter(Boolean).sort();\n      t.start = ds[0]; t.end = de[de.length-1];\n    }\n  }\n  if (g.messageId) { st.seen.push(g.messageId); if (st.seen.length > 200) st.seen = st.seen.slice(-200); }\n\n  // ---- itinerary ----\n  // Always show the traveller something useful: if this email added nothing\n  // new, fall back to the trip that is coming up next (or the most recent).\n  let t = st.trips[tripId] || null;\n  if (!t) {\n    const ids = Object.keys(st.trips);\n    if (ids.length) {\n      const now = Date.now();\n      const future = ids.filter(id => new Date(st.trips[id].end + 'T23:59:59Z').getTime() >= now);\n      const pickFrom = future.length ? future : ids;\n      pickFrom.sort((a, b) => new Date(st.trips[a].start) - new Date(st.trips[b].start));\n      tripId = future.length ? pickFrom[0] : pickFrom[pickFrom.length - 1];\n      t = st.trips[tripId];\n    }\n  }\n  const list = t ? t.keys.map(k => st.bookings[k]).filter(x => x && x.status !== 'cancelled') : [];\n  list.sort((x,y) => new Date(x.start) - new Date(y.start));\n  const D=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'], M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];\n  const ist = (iso) => { if (!iso) return null; const d = new Date(iso); return new Date(d.getTime() + 330*60000); };\n  const dd = (iso) => { const d = ist(iso); return d ? (D[d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + M[d.getUTCMonth()]) : ''; };\n  const hm = (iso) => { const d = ist(iso); return d ? (String(d.getUTCHours()).padStart(2,'0') + ':' + String(d.getUTCMinutes()).padStart(2,'0')) : '--:--'; };\n  const out = [];\n  if (t) {\n    out.push(t.name + '   ' + dd(t.start + 'T00:00:00Z') + ' to ' + dd(t.end + 'T00:00:00Z'));\n    out.push('Updated after the ' + (norm(b.vendor) || 'latest') + ' confirmation');\n    out.push(''); out.push('ITINERARY');\n    let cur = '';\n    for (const x of list) {\n      const d1 = dd(x.start); if (d1 !== cur) { out.push(''); out.push(d1); cur = d1; }\n      const bits = [hm(x.start), x.description || x.type];\n      if (x.originCity && x.destinationCity) bits.push(x.originCity + ' to ' + x.destinationCity);\n      if (x.confirmation) bits.push('Ref ' + x.confirmation);\n      if (x.address) bits.push(x.address);\n      out.push('  ' + bits.join('   '));\n      if (x.buffer) out.push('    leave ' + x.buffer + ' min earlier - calendar is set to ' + hm(new Date(new Date(x.start).getTime() - x.buffer*60000).toISOString()));\n      if (x.end && x.end !== x.start) out.push('  ' + hm(x.end) + '   arrives ' + dd(x.end));\n    }\n    const warn = [];\n    for (let i = 0; i < list.length - 1; i++) { const a = list[i], c = list[i+1]; const ae = new Date(a.end || a.start), cs = new Date(c.start); if (a.type === 'hotel' && ae.getTime() > cs.getTime()) warn.push('Checkout from ' + (a.vendor||'your stay') + ' is after your next departure.'); const gap = (cs - ae)/60000; if (gap >= 0 && gap < 60 && a.type !== 'hotel') warn.push('Only ' + Math.round(gap) + ' minutes between ' + (a.description||a.type) + ' and ' + (c.description||c.type) + '.'); }\n    if (warn.length) { out.push(''); out.push('NEEDS YOUR ATTENTION (' + warn.length + ')'); warn.forEach(w => out.push('  - ' + w)); }\n    const tot = {}; let noAmt = 0;\n    for (const x of list) { if (x.amount == null) { noAmt++; continue; } tot[x.currency] = (tot[x.currency]||0) + x.amount; }\n    out.push(''); out.push('EXPENSES');\n    const parts = Object.keys(tot).map(c => c + ' ' + tot[c].toFixed(2));\n    out.push('  ' + (parts.length ? parts.join('   ') : 'nothing captured yet') + (noAmt ? ('   ' + noAmt + ' booking(s) with no amount in the email') : ''));\n    if (st.sheetUrl) out.push('  Sheet: ' + st.sheetUrl);\n  } else { out.push('No travel bookings on file yet - nothing to show.'); }\n  if (isBooking && !complete) {\n    out.push('');\n    out.push('COULD NOT FILE THIS ONE');\n    out.push('  \"' + (g.subject || 'this email') + '\" from ' + (g.from || 'unknown sender'));\n    out.push('  Missing: ' + missing.join(', ') + '. Nothing was logged - please add it by hand.');\n  }\n\n  const bk = st.bookings[key] || {};\n  const evStart = bk.start ? new Date(new Date(bk.start).getTime() - (bk.buffer||0)*60000).toISOString() : '';\n  const future = bk.start ? (new Date(bk.start).getTime() > Date.now()) : false;\n  return {\n    action, tripId, itinerary: out.join('\\n'), stateJson: JSON.stringify(st),\n    needSheet: st.sheetId ? 'have' : ((action === 'new' || action === 'update') ? 'need' : 'have'),\n    wantEvent: (action === 'new' || action === 'update') && future && evStart && (bk.end || bk.start) ? 'yes' : 'no',\n    sheetId: st.sheetId,\n    row: [ (bk.start||'').slice(0,10), (t?t.name:''), bk.type||'', bk.vendor||'', bk.description||'', bk.category||'', bk.confirmation||'', (bk.amount==null?'':bk.amount), bk.currency||'', bk.status||'', new Date().toISOString().slice(0,10) ],\n    evTitle: (bk.description || bk.type || 'Travel') + (bk.confirmation ? ('  [' + bk.confirmation + ']') : ''),\n    evStart, evEnd: bk.end || bk.start || '', evLoc: bk.address || bk.destinationCity || '',\n    evDesc: 'Booked with ' + (bk.vendor||'-') + '. Leaves ' + (bk.buffer||0) + ' minutes before departure.'\n  };\n};",
+                      "packageJson": "{}"
+                    },
+                    "errorHandlingOptions": {
+                      "retryOnFailure": {
+                        "value": false
+                      },
+                      "continueOnFailure": {
+                        "value": false
+                      }
+                    }
+                  },
+                  "nextAction": {
+                    "name": "r_sheet",
+                    "type": "ROUTER",
+                    "valid": true,
+                    "children": [
+                      {
+                        "name": "mk_sheet",
+                        "type": "PIECE",
+                        "valid": true,
+                        "settings": {
+                          "input": {
+                            "auth": "{{connections['GOOGLE_SHEETS']}}",
+                            "title": "Travel expenses (created by your travel agent)",
+                            "includeTeamDrives": false
+                          },
+                          "pieceName": "@activepieces/piece-google-sheets",
+                          "actionName": "create-spreadsheet",
+                          "pieceVersion": "0.16.4",
+                          "propertySettings": {
+                            "auth": {
+                              "type": "MANUAL"
+                            },
+                            "title": {
+                              "type": "MANUAL"
+                            },
+                            "folder": {
+                              "type": "MANUAL"
+                            },
+                            "includeTeamDrives": {
+                              "type": "MANUAL"
+                            }
+                          },
+                          "errorHandlingOptions": {
+                            "retryOnFailure": {
+                              "value": false
+                            },
+                            "continueOnFailure": {
+                              "value": true
+                            }
+                          }
+                        },
+                        "nextAction": {
+                          "name": "sheet_head",
+                          "type": "PIECE",
+                          "valid": true,
+                          "settings": {
+                            "input": {
+                              "url": {
+                                "url": "https://sheets.googleapis.com/v4/spreadsheets/{{mk_sheet.output.spreadsheetId}}/values/A1:append"
+                              },
+                              "auth": "{{connections['GOOGLE_SHEETS']}}",
+                              "body": {
+                                "data": {
+                                  "values": [
+                                    [
+                                      "Date",
+                                      "Trip",
+                                      "Type",
+                                      "Vendor",
+                                      "Description",
+                                      "Category",
+                                      "Confirmation",
+                                      "Amount",
+                                      "Currency",
+                                      "Status",
+                                      "Logged on"
+                                    ]
+                                  ]
+                                }
+                              },
+                              "method": "POST",
+                              "headers": {},
+                              "failsafe": true,
+                              "body_type": "json",
+                              "queryParams": {
+                                "insertDataOption": "INSERT_ROWS",
+                                "valueInputOption": "USER_ENTERED"
+                              },
+                              "followRedirects": false,
+                              "response_is_binary": false
+                            },
+                            "pieceName": "@activepieces/piece-google-sheets",
+                            "actionName": "custom_api_call",
+                            "pieceVersion": "0.16.4",
+                            "propertySettings": {
+                              "url": {
+                                "type": "MANUAL"
+                              },
+                              "auth": {
+                                "type": "MANUAL"
+                              },
+                              "body": {
+                                "type": "MANUAL"
+                              },
+                              "method": {
+                                "type": "MANUAL"
+                              },
+                              "headers": {
+                                "type": "MANUAL"
+                              },
+                              "timeout": {
+                                "type": "MANUAL"
+                              },
+                              "failsafe": {
+                                "type": "MANUAL"
+                              },
+                              "body_type": {
+                                "type": "MANUAL"
+                              },
+                              "queryParams": {
+                                "type": "MANUAL"
+                              },
+                              "followRedirects": {
+                                "type": "MANUAL"
+                              },
+                              "response_is_binary": {
+                                "type": "MANUAL"
+                              }
+                            },
+                            "errorHandlingOptions": {
+                              "retryOnFailure": {
+                                "value": false
+                              },
+                              "continueOnFailure": {
+                                "value": true
+                              }
+                            }
+                          },
+                          "displayName": "Add the column headers",
+                          "lastUpdatedDate": "2026-08-03T11:51:06.875Z"
+                        },
+                        "displayName": "Create the expense sheet",
+                        "lastUpdatedDate": "2026-08-03T11:51:06.874Z"
+                      },
+                      null
+                    ],
+                    "settings": {
+                      "branches": [
+                        {
+                          "branchName": "Create it",
+                          "branchType": "CONDITION",
+                          "conditions": [
+                            [
+                              {
+                                "operator": "TEXT_EXACTLY_MATCHES",
+                                "firstValue": "{{core.output.needSheet}}",
+                                "secondValue": "need",
+                                "caseSensitive": false
+                              }
+                            ]
+                          ]
+                        },
+                        {
+                          "branchName": "Already have it",
+                          "branchType": "FALLBACK"
+                        }
+                      ],
+                      "executionType": "EXECUTE_FIRST_MATCH"
+                    },
+                    "nextAction": {
+                      "name": "finalise",
+                      "type": "CODE",
+                      "valid": true,
+                      "settings": {
+                        "input": {
+                          "core": "{{core}}",
+                          "made": "{{mk_sheet}}"
+                        },
+                        "sourceCode": {
+                          "code": "export const code = async (inputs) => {\n  const u = (v) => (v && typeof v === 'object' && Object.keys(v).length === 1 && 'output' in v) ? v.output : v;\n  const c = u(inputs.core) || {};\n  const made = u(inputs.made);\n  const pick = (o, names, d) => { if (!o || typeof o !== 'object' || (d||0) > 4) return undefined; for (const n of names) { if (typeof o[n] === 'string' && o[n]) return o[n]; } for (const k of Object.keys(o)) { const h = pick(o[k], names, (d||0)+1); if (h) return h; } return undefined; };\n  const newId = made ? (pick(made, ['spreadsheetId','id']) || '') : '';\n  let st = {}; try { st = JSON.parse(c.stateJson || '{}'); } catch (e) { st = {}; }\n  const sheetId = st.sheetId || newId || '';\n  if (sheetId && !st.sheetId) { st.sheetId = sheetId; st.sheetUrl = 'https://docs.google.com/spreadsheets/d/' + sheetId; }\n  const text = String(c.itinerary || '');\n  const withLink = (st.sheetUrl && text.indexOf(st.sheetUrl) === -1 && text.indexOf('EXPENSES') > -1) ? (text + '\\n  Sheet: ' + st.sheetUrl) : text;\n  return { sheetId, stateJson: JSON.stringify(st), itinerary: withLink, writeRow: (c.action === 'new' || c.action === 'update') && sheetId ? 'yes' : 'no' };\n};",
+                          "packageJson": "{}"
+                        },
+                        "errorHandlingOptions": {
+                          "retryOnFailure": {
+                            "value": false
+                          },
+                          "continueOnFailure": {
+                            "value": false
+                          }
+                        }
+                      },
+                      "nextAction": {
+                        "name": "r_row",
+                        "type": "ROUTER",
+                        "valid": true,
+                        "children": [
+                          {
+                            "name": "add_row",
+                            "type": "PIECE",
+                            "valid": true,
+                            "settings": {
+                              "input": {
+                                "url": {
+                                  "url": "https://sheets.googleapis.com/v4/spreadsheets/{{finalise.output.sheetId}}/values/A1:append"
+                                },
+                                "auth": "{{connections['GOOGLE_SHEETS']}}",
+                                "body": {
+                                  "data": {
+                                    "values": [
+                                      "{{core.output.row}}"
+                                    ]
+                                  }
+                                },
+                                "method": "POST",
+                                "headers": {},
+                                "failsafe": true,
+                                "body_type": "json",
+                                "queryParams": {
+                                  "insertDataOption": "INSERT_ROWS",
+                                  "valueInputOption": "USER_ENTERED"
+                                },
+                                "followRedirects": false,
+                                "response_is_binary": false
+                              },
+                              "pieceName": "@activepieces/piece-google-sheets",
+                              "actionName": "custom_api_call",
+                              "pieceVersion": "0.16.4",
+                              "propertySettings": {
+                                "url": {
+                                  "type": "MANUAL"
+                                },
+                                "auth": {
+                                  "type": "MANUAL"
+                                },
+                                "body": {
+                                  "type": "MANUAL"
+                                },
+                                "method": {
+                                  "type": "MANUAL"
+                                },
+                                "headers": {
+                                  "type": "MANUAL"
+                                },
+                                "timeout": {
+                                  "type": "MANUAL"
+                                },
+                                "failsafe": {
+                                  "type": "MANUAL"
+                                },
+                                "body_type": {
+                                  "type": "MANUAL"
+                                },
+                                "queryParams": {
+                                  "type": "MANUAL"
+                                },
+                                "followRedirects": {
+                                  "type": "MANUAL"
+                                },
+                                "response_is_binary": {
+                                  "type": "MANUAL"
+                                }
+                              },
+                              "errorHandlingOptions": {
+                                "retryOnFailure": {
+                                  "value": false
+                                },
+                                "continueOnFailure": {
+                                  "value": true
+                                }
+                              }
+                            },
+                            "displayName": "Log the expense row",
+                            "lastUpdatedDate": "2026-08-03T12:07:22.443Z"
+                          },
+                          null
+                        ],
+                        "settings": {
+                          "branches": [
+                            {
+                              "branchName": "Log it",
+                              "branchType": "CONDITION",
+                              "conditions": [
+                                [
+                                  {
+                                    "operator": "TEXT_EXACTLY_MATCHES",
+                                    "firstValue": "{{finalise.output.writeRow}}",
+                                    "secondValue": "yes",
+                                    "caseSensitive": false
+                                  }
+                                ]
+                              ]
+                            },
+                            {
+                              "branchName": "Nothing new",
+                              "branchType": "FALLBACK"
+                            }
+                          ],
+                          "executionType": "EXECUTE_FIRST_MATCH"
+                        },
+                        "nextAction": {
+                          "name": "r_cal",
+                          "type": "ROUTER",
+                          "valid": true,
+                          "children": [
+                            {
+                              "name": "mk_event",
+                              "type": "PIECE",
+                              "valid": true,
+                              "settings": {
+                                "input": {
+                                  "auth": "{{connections['GOOGLE_CALENDAR']}}",
+                                  "title": "{{core.output.evTitle}}",
+                                  "location": "{{core.output.evLoc}}",
+                                  "attendees": [],
+                                  "calendar_id": "primary",
+                                  "description": "{{core.output.evDesc}}",
+                                  "end_date_time": "{{core.output.evEnd}}",
+                                  "start_date_time": "{{core.output.evStart}}",
+                                  "create_meet_link": false,
+                                  "guests_can_modify": false,
+                                  "send_notifications": "none",
+                                  "guests_can_invite_others": false,
+                                  "guests_can_see_other_guests": false
+                                },
+                                "pieceName": "@activepieces/piece-google-calendar",
+                                "actionName": "create_google_calendar_event",
+                                "pieceVersion": "0.9.5",
+                                "propertySettings": {
+                                  "auth": {
+                                    "type": "MANUAL"
+                                  },
+                                  "title": {
+                                    "type": "MANUAL"
+                                  },
+                                  "colorId": {
+                                    "type": "MANUAL"
+                                  },
+                                  "location": {
+                                    "type": "MANUAL"
+                                  },
+                                  "attendees": {
+                                    "type": "MANUAL"
+                                  },
+                                  "calendar_id": {
+                                    "type": "MANUAL"
+                                  },
+                                  "description": {
+                                    "type": "MANUAL"
+                                  },
+                                  "end_date_time": {
+                                    "type": "MANUAL"
+                                  },
+                                  "start_date_time": {
+                                    "type": "MANUAL"
+                                  },
+                                  "create_meet_link": {
+                                    "type": "MANUAL"
+                                  },
+                                  "guests_can_modify": {
+                                    "type": "MANUAL"
+                                  },
+                                  "send_notifications": {
+                                    "type": "MANUAL"
+                                  },
+                                  "guests_can_invite_others": {
+                                    "type": "MANUAL"
+                                  },
+                                  "guests_can_see_other_guests": {
+                                    "type": "MANUAL"
+                                  }
+                                },
+                                "errorHandlingOptions": {
+                                  "retryOnFailure": {
+                                    "value": false
+                                  },
+                                  "continueOnFailure": {
+                                    "value": true
+                                  }
+                                }
+                              },
+                              "displayName": "Add it to the calendar",
+                              "lastUpdatedDate": "2026-08-03T11:51:06.878Z"
+                            },
+                            null
+                          ],
+                          "settings": {
+                            "branches": [
+                              {
+                                "branchName": "Add it",
+                                "branchType": "CONDITION",
+                                "conditions": [
+                                  [
+                                    {
+                                      "operator": "TEXT_EXACTLY_MATCHES",
+                                      "firstValue": "{{core.output.wantEvent}}",
+                                      "secondValue": "yes",
+                                      "caseSensitive": false
+                                    }
+                                  ]
+                                ]
+                              },
+                              {
+                                "branchName": "No",
+                                "branchType": "FALLBACK"
+                              }
+                            ],
+                            "executionType": "EXECUTE_FIRST_MATCH"
+                          },
+                          "nextAction": {
+                            "name": "save",
+                            "type": "PIECE",
+                            "valid": true,
+                            "settings": {
+                              "input": {
+                                "key": "travel_state",
+                                "value": "{{finalise.output.stateJson}}",
+                                "store_scope": "FLOW"
+                              },
+                              "pieceName": "@activepieces/piece-store",
+                              "actionName": "put",
+                              "pieceVersion": "0.6.19",
+                              "propertySettings": {
+                                "key": {
+                                  "type": "MANUAL"
+                                },
+                                "value": {
+                                  "type": "MANUAL"
+                                },
+                                "store_scope": {
+                                  "type": "MANUAL"
+                                }
+                              },
+                              "errorHandlingOptions": {
+                                "retryOnFailure": {
+                                  "value": false
+                                },
+                                "continueOnFailure": {
+                                  "value": true
+                                }
+                              }
+                            },
+                            "nextAction": {
+                              "name": "output",
+                              "type": "CODE",
+                              "valid": true,
+                              "settings": {
+                                "input": {
+                                  "text": "{{finalise}}"
+                                },
+                                "sourceCode": {
+                                  "code": "export const code = async (inputs) => {\n  const u = (v) => (v && typeof v === 'object' && Object.keys(v).length === 1 && 'output' in v) ? v.output : v;\n  const f = u(inputs.text) || {};\n  return String(f.itinerary || 'No travel booking in this email.');\n};",
+                                  "packageJson": "{}"
+                                },
+                                "errorHandlingOptions": {
+                                  "retryOnFailure": {
+                                    "value": false
+                                  },
+                                  "continueOnFailure": {
+                                    "value": false
+                                  }
+                                }
+                              },
+                              "displayName": "Your itinerary",
+                              "lastUpdatedDate": "2026-08-03T11:51:06.878Z"
+                            },
+                            "displayName": "Save what this run did",
+                            "lastUpdatedDate": "2026-08-03T11:51:06.877Z"
+                          },
+                          "displayName": "Calendar event needed?",
+                          "lastUpdatedDate": "2026-08-03T11:51:06.876Z"
+                        },
+                        "displayName": "Anything to log?",
+                        "lastUpdatedDate": "2026-08-03T12:07:21.639Z"
+                      },
+                      "displayName": "Merge and finish",
+                      "lastUpdatedDate": "2026-08-03T11:51:06.874Z"
+                    },
+                    "displayName": "Expense sheet exists?",
+                    "lastUpdatedDate": "2026-08-03T11:51:06.873Z"
+                  },
+                  "displayName": "Trip logic",
+                  "lastUpdatedDate": "2026-08-03T18:34:58.515Z"
+                },
+                "displayName": "Is this a booking?",
+                "lastUpdatedDate": "2026-08-03T18:29:18.005Z"
+              },
+              "displayName": "Which city do you travel from?",
+              "lastUpdatedDate": "2026-08-03T11:51:06.872Z"
+            },
+            "displayName": "Load saved trips",
+            "lastUpdatedDate": "2026-08-03T11:51:06.871Z"
+          },
+          "displayName": "Read the email",
+          "lastUpdatedDate": "2026-08-03T18:29:17.178Z"
+        },
+        "lastUpdatedDate": "2026-08-03T11:51:06.871Z",
+        "type": "PIECE_TRIGGER",
+        "settings": {
+          "sampleData": {},
+          "propertySettings": {
+            "to": {
+              "type": "MANUAL"
+            },
+            "from": {
+              "type": "MANUAL"
+            },
+            "label": {
+              "type": "MANUAL"
+            },
+            "subject": {
+              "type": "MANUAL"
+            },
+            "category": {
+              "type": "MANUAL"
+            }
+          },
+          "pieceName": "@activepieces/piece-gmail",
+          "pieceVersion": "0.12.7",
+          "triggerName": "gmail_new_email_received",
+          "input": {
+            "auth": "{{connections['GMAIL']}}",
+            "label": null,
+            "subject": "Booking Confirmation",
+            "category": null
+          }
+        }
+      },
+      "valid": true,
+      "schemaVersion": "22",
+      "notes": []
+    }
+  ],
+  "status": "PUBLISHED"
+}

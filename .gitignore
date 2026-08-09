@@ -1,0 +1,4 @@
+# local working copies of the flow, kept out of the published repo
+tao-lean-*.json
+steps/
+v5/
