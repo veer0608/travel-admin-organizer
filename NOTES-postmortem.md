@@ -385,3 +385,37 @@ missing one; and stripping non-digits from `"Rs. 412.25"` leaves the dot of `"Rs
 **v9** = v4 + the fixed parser + migration removed. Verified end-to-end against the exact email from
 the run log: no AI call, departure 22:55, arrival 12:35, buffer 22:10, total 412.25, calendar event
 `2026-08-07T16:40Z` (= 22:10 IST). Output format is v4's untouched.
+
+## v11, and how this ended
+
+v11 and v11b were built on 2026-08-08 and **never scored**. The OpenRouter credits that fed
+`gravity-piece-ai` were exhausted by then, so any run reaching the model failed outright, and the
+assignment closed before they were topped up. They are recorded here because an undocumented
+artefact in a repository is worse than a documented dead end, and `agent.json` is one of them.
+
+**v11 = v10 with the zero-AI parser removed.** v8 and v9 replaced the AI extraction with a
+deterministic IRCTC reader: 7,545 characters of `prep`, returning a booking only when every
+essential field was present. Both scored Rating 0.00, and the run log showed why - the failure was
+the exhausted credits, not the parser. That was never disproved, and v11 dropped the parser anyway:
+`prep` goes back to 3,660 characters that find the body, score it and gate on keywords, and the
+`r_ai` router reads `prep.output.bookingFlag` rather than `needsAI`. The honest summary is that the
+parser was abandoned without evidence against it, in a hurry, at the end of a budget.
+
+**The other change in v11 is the one worth keeping.** `core` gained a completeness gate, which is
+reviewer points #2, #3 and #4: a booking has to carry a start date, a destination or origin, and an
+identifier - a confirmation code, or a date and destination and a known type - before anything is
+created. `missing` names which of the three is absent. Without it the expense sheet was created for
+mail that had not been confirmed to be a booking at all.
+
+**v11b = v11 with `retryOnFailure` turned off on the `save` step.** A retried write of
+`travel_state` re-applies a run's changes to state that already holds them, and the only thing it
+can buy is a duplicate. One toggle, and the only difference between the two files.
+
+**What the repository publishes.** `agent.json` is v11b, sanitised: its five connection ids (one
+Gmail, four Google Sheets) replaced by `GMAIL` and `GOOGLE_SHEETS` placeholders, the instance's
+`metadata.externalId` removed, and a description filled in. Those seven differences are the whole
+of it, checked field by field rather than assumed. It is the only flow file in the repo: the `tao-lean-*.json` working copies are
+gitignored on purpose. So the artefact here is the *last* build, which is not the *best* one. The
+best scored 45.01/50 and is the v4 line in the table above; v11b has never been measured against
+it, and on the evidence of this table - where the plainest build won and most improvements made
+the graded text worse - it should not be assumed to be better.

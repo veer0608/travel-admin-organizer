@@ -83,6 +83,7 @@ truncated to nothing.
   output mid-JSON rather than erroring; a step is invalid unless `propertySettings` names every
   property, including empty ones).
 - [NOTES-postmortem.md](NOTES-postmortem.md) — eleven scored submissions and what the numbers
-  actually proved, including the ones where I was wrong.
+  actually proved, including the ones where I was wrong, and what `agent.json` here actually is:
+  the last build (v11b), not the highest scoring one (45.01/50, the v4 line).
 - [fixtures/test-emails.md](fixtures/test-emails.md) — the test set, built from real mail wherever
   possible, because synthetic fixtures are tidier than real ones and that is where parsing bugs hide.
